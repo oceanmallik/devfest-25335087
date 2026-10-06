@@ -186,7 +186,11 @@
       reasonExpiryNeeded: "Expiry date must be entered",
       reasonExpired: "Expiry date ({exp}) is before submission deadline ({dl})",
       reasonNotProvided: "Optional document not provided",
-      reasonOk: "Verified and compliant"
+      reasonOk: "Verified and compliant",
+      generatingPackageBtnText: "Generating Package...",
+      generatingPackageStatus: "Generating PDF package, please wait...",
+      packageGeneratedSuccess: "Tender package generated and downloaded successfully!",
+      generationFailedError: "Failed to generate package: "
     },
     bn: {
       appTitle: "দরপত্র নথি প্যাকেজ প্রস্তুতকারক",
@@ -259,7 +263,11 @@
       reasonExpiryNeeded: "মেয়াদ উত্তীর্ণের তারিখ প্রবেশ করানো প্রয়োজন",
       reasonExpired: "মেয়াদ উত্তীর্ণের তারিখ ({exp}) জমা দেওয়ার শেষ সময়ের ({dl}) পূর্বে",
       reasonNotProvided: "ঐচ্ছিক নথি প্রদান করা হয়নি",
-      reasonOk: "যাচাইকৃত ও প্রস্তুত"
+      reasonOk: "যাচাইকৃত ও প্রস্তুত",
+      generatingPackageBtnText: "প্যাকেজ তৈরি হচ্ছে...",
+      generatingPackageStatus: "পিডিএফ প্যাকেজ প্রস্তুত হচ্ছে, অনুগ্রহ করে অপেক্ষা করুন...",
+      packageGeneratedSuccess: "দরপত্র প্যাকেজ সফলভাবে তৈরি এবং ডাউনলোড করা হয়েছে!",
+      generationFailedError: "প্যাকেজ তৈরি করতে ব্যর্থ হয়েছে: "
     }
   };
 
@@ -270,7 +278,8 @@
     sortedRequirements: [],
     uploadedFiles: [], // Array of { id, file, name, size, hash, pageCount, isDuplicate, duplicateWith: [], matchedReqId }
     documentMatches: {}, // Map: reqId -> fileId
-    expiryDates: {} // Map: reqId -> 'YYYY-MM-DD'
+    expiryDates: {}, // Map: reqId -> 'YYYY-MM-DD'
+    isGeneratingPackage: false
   };
 
   // DOM Elements
@@ -836,8 +845,10 @@
       el.generateWarningBox.innerHTML = listHtml;
     } else {
       // No blocking problems: enable Generate button
-      el.generatePackageBtn.disabled = false;
-      el.generateStatusSummary.textContent = texts.generationReadyMsg;
+      if (!state.isGeneratingPackage) {
+        el.generatePackageBtn.disabled = false;
+        el.generateStatusSummary.textContent = texts.generationReadyMsg;
+      }
 
       el.generateWarningBox.className = 'generate-success-box';
       el.generateWarningBox.style.display = 'flex';
@@ -1288,6 +1299,464 @@
   }
 
   /**
+   * =========================================================================
+   * PDF Package Generation via pdf-lib CDN
+   * =========================================================================
+   */
+
+  /**
+   * Ensure pdf-lib library is loaded from public CDN
+   */
+  async function ensurePdfLib() {
+    if (window.PDFLib) return window.PDFLib;
+
+    const existingScript = document.querySelector('script[src*="pdf-lib"]');
+    if (existingScript) {
+      if (window.PDFLib) return window.PDFLib;
+      await new Promise((resolve, reject) => {
+        existingScript.addEventListener('load', () => resolve(window.PDFLib));
+        existingScript.addEventListener('error', () => reject(new Error('Failed to load pdf-lib CDN.')));
+        setTimeout(() => {
+          if (window.PDFLib) resolve(window.PDFLib);
+          else reject(new Error('Timeout loading pdf-lib.'));
+        }, 8000);
+      });
+      if (window.PDFLib) return window.PDFLib;
+    }
+
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+      script.crossOrigin = 'anonymous';
+      script.onload = () => {
+        if (window.PDFLib) resolve(window.PDFLib);
+        else reject(new Error('pdf-lib loaded but PDFLib is undefined.'));
+      };
+      script.onerror = () => reject(new Error('Failed to load pdf-lib from CDN.'));
+      document.head.appendChild(script);
+    });
+  }
+
+  /**
+   * Sanitize text to ensure WinAnsi / ASCII compatibility with pdf-lib standard fonts
+   */
+  function sanitizeForPdf(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\u2022/g, '*')
+      .replace(/\u2026/g, '...')
+      .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Truncate text to fit within a maxWidth for a given font and size
+   */
+  function fitText(text, font, size, maxWidth) {
+    let str = sanitizeForPdf(text);
+    if (!str) return '';
+    if (font.widthOfTextAtSize(str, size) <= maxWidth) {
+      return str;
+    }
+    while (str.length > 1 && font.widthOfTextAtSize(str + '...', size) > maxWidth) {
+      str = str.slice(0, -1);
+    }
+    return str ? str + '...' : '';
+  }
+
+  /**
+   * Draw footer text '<Tender ID> | Page X of Y' on a page
+   * Places the text cleanly in the bottom margin without obscuring document content.
+   * Handles page dimensions and page rotation (0, 90, 180, 270 deg).
+   */
+  function drawFooterOnPage(page, footerText, font, size = 9) {
+    const { width, height } = page.getSize();
+    const textWidth = font.widthOfTextAtSize(footerText, size);
+    const rotation = ((page.getRotation().angle || 0) % 360 + 360) % 360;
+    const margin = 20; // 20pt from the bottom edge
+    const color = window.PDFLib.rgb(0.25, 0.28, 0.32);
+
+    let x, y, rotateAngle;
+
+    if (rotation === 90) {
+      x = width - margin;
+      y = (height - textWidth) / 2;
+      rotateAngle = window.PDFLib.degrees(90);
+    } else if (rotation === 180) {
+      x = (width + textWidth) / 2;
+      y = height - margin;
+      rotateAngle = window.PDFLib.degrees(180);
+    } else if (rotation === 270) {
+      x = margin;
+      y = (height + textWidth) / 2;
+      rotateAngle = window.PDFLib.degrees(270);
+    } else {
+      // Standard 0 deg rotation
+      x = (width - textWidth) / 2;
+      y = margin;
+      rotateAngle = window.PDFLib.degrees(0);
+    }
+
+    page.drawText(footerText, {
+      x,
+      y,
+      size,
+      font,
+      color,
+      rotate: rotateAngle
+    });
+  }
+
+  /**
+   * Generate Final Tender Package PDF using pdf-lib
+   *
+   * 1. Creates a new PDF document.
+   * 2. Page 1 is a Cover Page (in English) displaying tender ID, title, procuring entity,
+   *    bidder, deadline, today's date, and the list of included documents in their correct order.
+   * 3. Appends all pages of successfully matched PDF files in required order (skipping optional docs with no file).
+   * 4. Adds footer to every single page: '<Tender ID> | Page X of Y' (where Y is total page count).
+   * 5. Triggers browser download named exactly '<Tender ID>_Package.pdf'.
+   */
+  async function generatePackagePdf() {
+    if (el.generatePackageBtn.disabled || state.isGeneratingPackage) return;
+
+    // Check for any blocking issues
+    const blockingItems = [];
+    state.sortedRequirements.forEach(req => {
+      const status = getDocumentStatus(req);
+      if (status.isBlocking) {
+        blockingItems.push({ req, status });
+      }
+    });
+
+    if (blockingItems.length > 0) {
+      validateAndRenderPackageStatus();
+      return;
+    }
+
+    const texts = I18N[state.currentLang];
+    const tender = state.tenderData ? (state.tenderData.tender || state.tenderData) : {};
+    const tenderId = sanitizeForPdf(tender.tender_id || tender.id || tender.tenderId || 'TENDER');
+    const tenderTitle = sanitizeForPdf(tender.title || tender.tender_title || tender.tenderTitle || 'Tender Package');
+    const procuringEntity = sanitizeForPdf(tender.procuring_entity || tender.entity || tender.procuringEntity || tender.organization || 'N/A');
+    const bidder = sanitizeForPdf(tender.bidder || tender.bidder_name || tender.bidderName || tender.vendor || 'N/A');
+    const deadline = sanitizeForPdf(tender.submission_deadline || tender.deadline || tender.submissionDeadline || tender.due_date || 'N/A');
+
+    // Today's date in YYYY-MM-DD
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const todayDate = `${yyyy}-${mm}-${dd}`;
+
+    // Set UI loading state
+    state.isGeneratingPackage = true;
+    el.generatePackageBtn.disabled = true;
+    const originalBtnHtml = el.generatePackageBtn.innerHTML;
+    el.generatePackageBtn.innerHTML = `
+      <svg class="spinner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path>
+      </svg>
+      <span>${escapeHtml(texts.generatingPackageBtnText || 'Generating Package...')}</span>
+    `;
+    el.generateStatusSummary.textContent = texts.generatingPackageStatus || 'Generating PDF package, please wait...';
+
+    try {
+      // 1. Ensure pdf-lib is loaded
+      const PDFLib = await ensurePdfLib();
+
+      // 2. Identify included documents in correct order (skip optional docs with no file)
+      const includedDocs = [];
+      for (const req of state.sortedRequirements) {
+        const fileId = state.documentMatches[req.id];
+        if (!fileId) {
+          // Skip optional documents that have no file
+          continue;
+        }
+        const fileRecord = state.uploadedFiles.find(f => f.id === fileId);
+        if (!fileRecord || !fileRecord.file) {
+          continue;
+        }
+
+        // Load source PDF document
+        const arrayBuffer = await fileRecord.file.arrayBuffer();
+        const srcDoc = await PDFLib.PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
+        const pageIndices = srcDoc.getPageIndices();
+
+        includedDocs.push({
+          req,
+          fileRecord,
+          srcDoc,
+          pageIndices,
+          pageCount: pageIndices.length
+        });
+      }
+
+      // 3. Create new PDF document
+      const pdfDoc = await PDFLib.PDFDocument.create();
+
+      // Embed standard fonts (Helvetica)
+      const fontRegular = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+      const fontBold = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+      const fontOblique = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaOblique);
+
+      // Colors
+      const cPrimary = PDFLib.rgb(0.09, 0.28, 0.65);
+      const cTextMain = PDFLib.rgb(0.12, 0.16, 0.22);
+      const cTextMuted = PDFLib.rgb(0.40, 0.45, 0.52);
+      const cBorder = PDFLib.rgb(0.85, 0.88, 0.92);
+      const cBoxBg = PDFLib.rgb(0.97, 0.98, 0.99);
+      const cHeaderBg = PDFLib.rgb(0.92, 0.94, 0.98);
+      const cRowAlt = PDFLib.rgb(0.98, 0.99, 1.0);
+      const cGreen = PDFLib.rgb(0.08, 0.60, 0.25);
+
+      // 4. Create Page 1: Cover Page (in English)
+      const pageSize = (PDFLib.PageSizes && PDFLib.PageSizes.A4) ? PDFLib.PageSizes.A4 : [595.28, 841.89];
+      const coverPage = pdfDoc.addPage(pageSize);
+      const { width, height } = coverPage.getSize();
+      const marginX = 45;
+      const contentWidth = width - marginX * 2;
+
+      // Top decorative accent bar
+      coverPage.drawRectangle({
+        x: marginX,
+        y: height - 34,
+        width: contentWidth,
+        height: 4,
+        color: cPrimary
+      });
+
+      // Cover Title
+      coverPage.drawText('TENDER SUBMISSION PACKAGE', {
+        x: marginX,
+        y: height - 60,
+        size: 18,
+        font: fontBold,
+        color: cPrimary
+      });
+
+      coverPage.drawText('Official Tender Document Submission & Verification Summary', {
+        x: marginX,
+        y: height - 76,
+        size: 9,
+        font: fontRegular,
+        color: cTextMuted
+      });
+
+      coverPage.drawLine({
+        start: { x: marginX, y: height - 86 },
+        end: { x: marginX + contentWidth, y: height - 86 },
+        thickness: 0.75,
+        color: cBorder
+      });
+
+      // Metadata Box (Tender ID, Title, Procuring Entity, Bidder, Deadline, Today's Date)
+      const metaBoxY = height - 200;
+      const metaBoxHeight = 104;
+
+      coverPage.drawRectangle({
+        x: marginX,
+        y: metaBoxY,
+        width: contentWidth,
+        height: metaBoxHeight,
+        color: cBoxBg,
+        borderColor: cBorder,
+        borderWidth: 0.75
+      });
+
+      coverPage.drawText('TENDER DETAILS', {
+        x: marginX + 14,
+        y: metaBoxY + metaBoxHeight - 16,
+        size: 9,
+        font: fontBold,
+        color: cPrimary
+      });
+
+      coverPage.drawLine({
+        start: { x: marginX + 14, y: metaBoxY + metaBoxHeight - 22 },
+        end: { x: marginX + contentWidth - 14, y: metaBoxY + metaBoxHeight - 22 },
+        thickness: 0.5,
+        color: cBorder
+      });
+
+      // Row 1: Tender ID & Today's Date
+      coverPage.drawText('Tender ID:', { x: marginX + 14, y: metaBoxY + 62, size: 8.5, font: fontBold, color: cTextMain });
+      coverPage.drawText(tenderId, { x: marginX + 115, y: metaBoxY + 62, size: 8.5, font: fontRegular, color: cTextMain });
+
+      coverPage.drawText('Date:', { x: marginX + 325, y: metaBoxY + 62, size: 8.5, font: fontBold, color: cTextMain });
+      coverPage.drawText(todayDate, { x: marginX + 375, y: metaBoxY + 62, size: 8.5, font: fontRegular, color: cTextMain });
+
+      // Row 2: Title
+      coverPage.drawText('Title:', { x: marginX + 14, y: metaBoxY + 44, size: 8.5, font: fontBold, color: cTextMain });
+      coverPage.drawText(fitText(tenderTitle, fontRegular, 8.5, contentWidth - 130), { x: marginX + 115, y: metaBoxY + 44, size: 8.5, font: fontRegular, color: cTextMain });
+
+      // Row 3: Procuring Entity
+      coverPage.drawText('Procuring Entity:', { x: marginX + 14, y: metaBoxY + 26, size: 8.5, font: fontBold, color: cTextMain });
+      coverPage.drawText(fitText(procuringEntity, fontRegular, 8.5, contentWidth - 130), { x: marginX + 115, y: metaBoxY + 26, size: 8.5, font: fontRegular, color: cTextMain });
+
+      // Row 4: Bidder & Deadline
+      coverPage.drawText('Bidder:', { x: marginX + 14, y: metaBoxY + 8, size: 8.5, font: fontBold, color: cTextMain });
+      coverPage.drawText(fitText(bidder, fontRegular, 8.5, 200), { x: marginX + 115, y: metaBoxY + 8, size: 8.5, font: fontRegular, color: cTextMain });
+
+      coverPage.drawText('Deadline:', { x: marginX + 325, y: metaBoxY + 8, size: 8.5, font: fontBold, color: cTextMain });
+      coverPage.drawText(deadline, { x: marginX + 375, y: metaBoxY + 8, size: 8.5, font: fontRegular, color: cTextMain });
+
+      // Included Documents Section Header
+      const docsHeadingY = metaBoxY - 24;
+      coverPage.drawText('INCLUDED DOCUMENTS', {
+        x: marginX,
+        y: docsHeadingY,
+        size: 11,
+        font: fontBold,
+        color: cPrimary
+      });
+
+      coverPage.drawText(`The following ${includedDocs.length} document(s) are attached in required order:`, {
+        x: marginX,
+        y: docsHeadingY - 14,
+        size: 8,
+        font: fontOblique,
+        color: cTextMuted
+      });
+
+      // Table Header
+      const tableHeaderY = docsHeadingY - 38;
+      const tableHeaderHeight = 20;
+
+      coverPage.drawRectangle({
+        x: marginX,
+        y: tableHeaderY,
+        width: contentWidth,
+        height: tableHeaderHeight,
+        color: cHeaderBg,
+        borderColor: cBorder,
+        borderWidth: 0.75
+      });
+
+      coverPage.drawText('#', { x: marginX + 8, y: tableHeaderY + 6, size: 8, font: fontBold, color: cTextMain });
+      coverPage.drawText('DOCUMENT TITLE', { x: marginX + 30, y: tableHeaderY + 6, size: 8, font: fontBold, color: cTextMain });
+      coverPage.drawText('ID', { x: marginX + 220, y: tableHeaderY + 6, size: 8, font: fontBold, color: cTextMain });
+      coverPage.drawText('ATTACHED FILE', { x: marginX + 265, y: tableHeaderY + 6, size: 8, font: fontBold, color: cTextMain });
+      coverPage.drawText('PAGES', { x: marginX + 415, y: tableHeaderY + 6, size: 8, font: fontBold, color: cTextMain });
+      coverPage.drawText('STATUS', { x: marginX + 465, y: tableHeaderY + 6, size: 8, font: fontBold, color: cTextMain });
+
+      // Table Rows
+      const availableTableHeight = tableHeaderY - 70; // ensure table ends above y=70, keeping clear distance from footer at y=20
+      const numDocs = includedDocs.length;
+      const rowHeight = Math.max(16, Math.min(26, Math.floor(availableTableHeight / Math.max(numDocs, 1))));
+      const fontSize = rowHeight >= 22 ? 8.5 : (rowHeight >= 18 ? 8 : 7.5);
+
+      for (let i = 0; i < numDocs; i++) {
+        const item = includedDocs[i];
+        const rowY = tableHeaderY - (i + 1) * rowHeight;
+        const isAlt = i % 2 === 1;
+
+        if (isAlt) {
+          coverPage.drawRectangle({
+            x: marginX,
+            y: rowY,
+            width: contentWidth,
+            height: rowHeight,
+            color: cRowAlt
+          });
+        }
+
+        coverPage.drawLine({
+          start: { x: marginX, y: rowY },
+          end: { x: marginX + contentWidth, y: rowY },
+          thickness: 0.5,
+          color: cBorder
+        });
+
+        const textY = rowY + Math.floor((rowHeight - fontSize) / 2) + 2;
+
+        // Order
+        const orderStr = String(item.req.order !== undefined ? item.req.order : i + 1);
+        coverPage.drawText(orderStr, { x: marginX + 8, y: textY, size: fontSize, font: fontRegular, color: cTextMain });
+
+        // English Title
+        const titleStr = fitText(item.req.title_en || item.req.title_bn || item.req.id, fontBold, fontSize, 185);
+        coverPage.drawText(titleStr, { x: marginX + 30, y: textY, size: fontSize, font: fontBold, color: cTextMain });
+
+        // ID
+        coverPage.drawText(sanitizeForPdf(item.req.id || ''), { x: marginX + 220, y: textY, size: fontSize, font: fontRegular, color: cTextMuted });
+
+        // File name
+        const fileNameStr = fitText(item.fileRecord.name || '', fontRegular, fontSize, 140);
+        coverPage.drawText(fileNameStr, { x: marginX + 265, y: textY, size: fontSize, font: fontRegular, color: cTextMain });
+
+        // Page count
+        const pCountStr = `${item.pageCount} ${item.pageCount === 1 ? 'page' : 'pages'}`;
+        coverPage.drawText(pCountStr, { x: marginX + 415, y: textY, size: fontSize, font: fontRegular, color: cTextMuted });
+
+        // Status
+        let statusText = 'OK';
+        let statusColor = cGreen;
+        if (item.req.has_expiry && state.expiryDates[item.req.id]) {
+          statusText = 'Valid';
+        }
+        coverPage.drawText(statusText, { x: marginX + 465, y: textY, size: fontSize, font: fontBold, color: statusColor });
+      }
+
+      // 5. Append all pages of the successfully matched PDF files in required order
+      for (const item of includedDocs) {
+        const copiedPages = await pdfDoc.copyPages(item.srcDoc, item.pageIndices);
+        for (const page of copiedPages) {
+          pdfDoc.addPage(page);
+        }
+      }
+
+      // 6. Add footer to every single page (including the cover):
+      // Reads: <Tender ID> | Page X of Y (where Y is total page count)
+      const totalPages = pdfDoc.getPageCount();
+      for (let i = 0; i < totalPages; i++) {
+        const page = pdfDoc.getPage(i);
+        const pageNumber = i + 1;
+        const footerText = `${tenderId} | Page ${pageNumber} of ${totalPages}`;
+        drawFooterOnPage(page, footerText, fontRegular, 9);
+      }
+
+      // 7. Trigger download named exactly <Tender ID>_Package.pdf
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+      const downloadUrl = URL.createObjectURL(blob);
+      const downloadLink = document.createElement('a');
+      downloadLink.href = downloadUrl;
+      downloadLink.download = `${tenderId}_Package.pdf`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+
+      setTimeout(() => {
+        document.body.removeChild(downloadLink);
+        URL.revokeObjectURL(downloadUrl);
+      }, 200);
+
+      // Success notification
+      if (el.generateWarningBox) {
+        el.generateWarningBox.className = 'generate-success-box';
+        el.generateWarningBox.style.display = 'flex';
+        el.generateWarningBox.innerHTML = `
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>${escapeHtml(texts.packageGeneratedSuccess || 'Tender package generated and downloaded successfully!')}</span>
+        `;
+      }
+    } catch (err) {
+      console.error('PDF Package generation error:', err);
+      showAlert(`${texts.generationFailedError || 'Failed to generate package: '}${err.message}`, 'error');
+    } finally {
+      state.isGeneratingPackage = false;
+      el.generatePackageBtn.innerHTML = originalBtnHtml;
+      validateAndRenderPackageStatus();
+    }
+  }
+
+  /**
    * Setup Event Listeners
    */
   function initEvents() {
@@ -1408,9 +1877,7 @@
 
     // Generate Package Button Click
     el.generatePackageBtn.addEventListener('click', () => {
-      if (el.generatePackageBtn.disabled) return;
-      const texts = I18N[state.currentLang];
-      alert(texts.generationReadyMsg);
+      generatePackagePdf();
     });
 
     // Keyboard navigation for language buttons

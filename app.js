@@ -1,10 +1,16 @@
 /**
  * Tender Document Package Builder
  * Pure Vanilla JavaScript (No Frameworks, No Bundlers)
+ * Includes: PDF handling, pdf.js page count, duplicate detection, and document matching UI
  */
 
 (function () {
   'use strict';
+
+  // Configure pdf.js worker if library is present
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
 
   // Sample requirements data (exact schema from problem-pack)
   const SAMPLE_DATA = {
@@ -133,7 +139,27 @@
       errorNoData: "The JSON does not contain valid tender requirements data.",
       copied: "Copied!",
       daysLeft: "days left",
-      deadlinePassed: "Deadline passed"
+      deadlinePassed: "Deadline passed",
+      // PDF & Matching strings
+      pdfUploadTitle: "Upload Tender Documents (PDF)",
+      pdfUploadDesc: "Upload PDF files to match against required documents. Non-PDF files are strictly rejected.",
+      pdfDropText: "Drag and drop <strong>PDF files</strong> here (multiple files supported)",
+      browsePdfBtnText: "Select PDF Files",
+      uploadedPdfsHeading: "Uploaded PDF Files",
+      badgeDuplicate: "Duplicate",
+      duplicateDetectedText: "Duplicate files detected",
+      duplicateOf: "Duplicate of",
+      pageSingular: "page",
+      pagePlural: "pages",
+      selectPdfPlaceholder: "Select a PDF file to match...",
+      unmatchBtnText: "Unmatch",
+      unmatchTooltip: "Remove match",
+      matchedBadge: "Matched",
+      assignedToPrefix: "Assigned to",
+      unassignedText: "Unassigned",
+      duplicateBlockedMsg: "Blocked: Duplicate of file assigned to another document",
+      duplicateMatchPreventedAlert: "Cannot match: A duplicate of this file is already matched to another document.",
+      rejectNonPdfMsg: "Rejected non-PDF file(s): "
     },
     bn: {
       appTitle: "দরপত্র নথি প্যাকেজ প্রস্তুতকারক",
@@ -167,7 +193,27 @@
       errorNoData: "JSON ফাইলে দরপত্রের প্রয়োজনীয় ডেটা খুঁজে পাওয়া যায়নি।",
       copied: "কপি হয়েছে!",
       daysLeft: "দিন বাকি",
-      deadlinePassed: "মেয়াদ উত্তীর্ণ"
+      deadlinePassed: "মেয়াদ উত্তীর্ণ",
+      // PDF & Matching strings
+      pdfUploadTitle: "দরপত্র নথিপত্র আপলোড (PDF)",
+      pdfUploadDesc: "প্রয়োজনীয় নথির সাথে ম্যাচ করার জন্য PDF ফাইল আপলোড করুন। নন-PDF ফাইল সম্পূর্ণরূপে বাতিল হবে।",
+      pdfDropText: "এখানে একাধিক <strong>PDF ফাইল</strong> ড্র্যাগ ও ড্রপ করুন",
+      browsePdfBtnText: "পিডিএফ ফাইল নির্বাচন করুন",
+      uploadedPdfsHeading: "আপলোডকৃত পিডিএফ ফাইলসমূহ",
+      badgeDuplicate: "ডুপ্লিকেট ফাইল",
+      duplicateDetectedText: "ডুপ্লিকেট ফাইল শনাক্ত হয়েছে",
+      duplicateOf: "ডুপ্লিকেট ফাইল:",
+      pageSingular: "পৃষ্ঠা",
+      pagePlural: "পৃষ্ঠা",
+      selectPdfPlaceholder: "ম্যাচ করতে একটি পিডিএফ নির্বাচন করুন...",
+      unmatchBtnText: "ম্যাচ বাতিল",
+      unmatchTooltip: "ফাইল ম্যাচটি বাতিল করুন",
+      matchedBadge: "সংযুক্ত",
+      assignedToPrefix: "সংযুক্ত:",
+      unassignedText: "অসংযুক্ত",
+      duplicateBlockedMsg: "নিষিদ্ধ: অন্য নথিতে সংযুক্ত ফাইলের হুবহু ডুপ্লিকেট",
+      duplicateMatchPreventedAlert: "ম্যাচ করা সম্ভব নয়: এই ফাইলের একটি ডুপ্লিকেট ইতিমধ্যে অন্য নথিতে সংযুক্ত আছে।",
+      rejectNonPdfMsg: "নন-PDF ফাইল বাতিল করা হয়েছে: "
     }
   };
 
@@ -175,7 +221,9 @@
   const state = {
     currentLang: 'en', // 'en' or 'bn'
     tenderData: null,
-    sortedRequirements: []
+    sortedRequirements: [],
+    uploadedFiles: [], // Array of { id, file, name, size, hash, pageCount, isDuplicate, duplicateWith: [] }
+    documentMatches: {} // Map: reqId -> fileId
   };
 
   // DOM Elements
@@ -204,7 +252,19 @@
     reqListCount: document.getElementById('reqListCount'),
     mandatoryCount: document.getElementById('mandatoryCount'),
     optionalCount: document.getElementById('optionalCount'),
-    requirementsList: document.getElementById('requirementsList')
+    requirementsList: document.getElementById('requirementsList'),
+    // PDF elements
+    pdfDropZone: document.getElementById('pdfDropZone'),
+    pdfFileInput: document.getElementById('pdfFileInput'),
+    browsePdfBtn: document.getElementById('browsePdfBtn'),
+    pdfAlertBox: document.getElementById('pdfAlertBox'),
+    pdfAlertText: document.getElementById('pdfAlertText'),
+    pdfAlertCloseBtn: document.getElementById('pdfAlertCloseBtn'),
+    uploadedFilesContainer: document.getElementById('uploadedFilesContainer'),
+    uploadedFilesList: document.getElementById('uploadedFilesList'),
+    pdfUploadedCount: document.getElementById('pdfUploadedCount'),
+    duplicateSummaryBadge: document.getElementById('duplicateSummaryBadge'),
+    duplicateSummaryText: document.getElementById('duplicateSummaryText')
   };
 
   /**
@@ -229,6 +289,16 @@
   }
 
   /**
+   * Format page count string
+   */
+  function formatPages(count) {
+    const texts = I18N[state.currentLang];
+    const formattedNum = formatNumber(count);
+    const label = count === 1 ? texts.pageSingular : texts.pagePlural;
+    return `${formattedNum} ${label}`;
+  }
+
+  /**
    * Escape HTML to prevent XSS
    */
   function escapeHtml(str) {
@@ -242,7 +312,7 @@
   }
 
   /**
-   * Show alert message
+   * Show alert message for JSON upload
    */
   function showAlert(message, type = 'error') {
     el.alertBox.className = `alert-box alert-${type}`;
@@ -251,10 +321,26 @@
   }
 
   /**
-   * Hide alert message
+   * Hide JSON alert
    */
   function hideAlert() {
     el.alertBox.style.display = 'none';
+  }
+
+  /**
+   * Show PDF alert message
+   */
+  function showPdfAlert(message, type = 'error') {
+    el.pdfAlertBox.className = `alert-box alert-${type}`;
+    el.pdfAlertText.textContent = message;
+    el.pdfAlertBox.style.display = 'flex';
+  }
+
+  /**
+   * Hide PDF alert
+   */
+  function hidePdfAlert() {
+    el.pdfAlertBox.style.display = 'none';
   }
 
   /**
@@ -264,10 +350,8 @@
     if (lang !== 'en' && lang !== 'bn') return;
     state.currentLang = lang;
 
-    // Update document lang attribute
     document.documentElement.lang = lang;
 
-    // Update button states
     if (lang === 'en') {
       el.langEnBtn.classList.add('active');
       el.langEnBtn.setAttribute('aria-checked', 'true');
@@ -284,7 +368,6 @@
     document.querySelectorAll('[data-i18n]').forEach(element => {
       const key = element.getAttribute('data-i18n');
       if (I18N[lang][key]) {
-        // If translation contains html tags like <strong> or <code>
         if (I18N[lang][key].includes('<')) {
           element.innerHTML = I18N[lang][key];
         } else {
@@ -293,11 +376,329 @@
       }
     });
 
-    // Re-render tender data if loaded
     if (state.tenderData) {
       renderSummaryHeader();
       renderRequirementsList();
     }
+
+    renderUploadedFilesList();
+  }
+
+  /**
+   * Calculate SHA-256 hash using native Web Crypto API
+   */
+  async function computeFileHash(arrayBuffer) {
+    try {
+      const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    } catch (e) {
+      console.warn('Crypto subtle digest error:', e);
+      // Fallback fast checksum
+      let hash = 0;
+      const bytes = new Uint8Array(arrayBuffer);
+      for (let i = 0; i < bytes.length; i += 4) {
+        hash = ((hash << 5) - hash) + bytes[i];
+        hash |= 0;
+      }
+      return 'fallback_' + Math.abs(hash).toString(16);
+    }
+  }
+
+  /**
+   * Binary fallback page counter for PDFs
+   */
+  function fallbackCountPdfPages(arrayBuffer) {
+    try {
+      const bytes = new Uint8Array(arrayBuffer);
+      const text = new TextDecoder('latin1').decode(bytes);
+      // Match /Type /Page (excluding /Pages)
+      const matches = text.match(/\/Type\s*\/Page(?![sA-Za-z])/g);
+      if (matches && matches.length > 0) {
+        return matches.length;
+      }
+      // Match /Count in Pages dictionary
+      const countMatch = text.match(/\/Type\s*\/Pages[^>]*\/Count\s+(\d+)/);
+      if (countMatch && countMatch[1]) {
+        return parseInt(countMatch[1], 10);
+      }
+    } catch (e) {
+      console.error('Binary page counting fallback error:', e);
+    }
+    return 1;
+  }
+
+  /**
+   * Calculate PDF page count using pdf.js from CDN
+   */
+  async function getPdfPageCount(arrayBuffer) {
+    if (window.pdfjsLib) {
+      try {
+        const loadingTask = window.pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer.slice(0)) });
+        const pdf = await loadingTask.promise;
+        if (pdf && typeof pdf.numPages === 'number') {
+          return pdf.numPages;
+        }
+      } catch (err) {
+        console.warn('pdf.js count failed, using binary inspection:', err);
+      }
+    }
+    return fallbackCountPdfPages(arrayBuffer);
+  }
+
+  /**
+   * Update duplicate flags across all uploaded files
+   */
+  function refreshDuplicateFlags() {
+    const hashCounts = {};
+    state.uploadedFiles.forEach(f => {
+      hashCounts[f.hash] = (hashCounts[f.hash] || 0) + 1;
+    });
+
+    let duplicateTotal = 0;
+    state.uploadedFiles.forEach(f => {
+      const isDup = hashCounts[f.hash] > 1;
+      f.isDuplicate = isDup;
+      if (isDup) {
+        duplicateTotal++;
+        f.duplicateWith = state.uploadedFiles
+          .filter(other => other.id !== f.id && other.hash === f.hash)
+          .map(o => o.name);
+      } else {
+        f.duplicateWith = [];
+      }
+    });
+
+    if (duplicateTotal > 0) {
+      el.duplicateSummaryBadge.style.display = 'inline-flex';
+      el.duplicateSummaryText.textContent = I18N[state.currentLang].duplicateDetectedText;
+    } else {
+      el.duplicateSummaryBadge.style.display = 'none';
+    }
+  }
+
+  /**
+   * Process multiple uploaded PDF files
+   */
+  async function handlePdfFiles(fileList) {
+    hidePdfAlert();
+    if (!fileList || fileList.length === 0) return;
+
+    const rejectedFiles = [];
+    const validFiles = [];
+
+    // 1. Strictly validate PDF type
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const name = file.name || '';
+      const isPdfName = name.toLowerCase().endsWith('.pdf');
+      const isPdfMime = file.type === 'application/pdf';
+
+      if (!isPdfName && (!file.type || !isPdfMime)) {
+        rejectedFiles.push(name || `File ${i + 1}`);
+      } else {
+        validFiles.push(file);
+      }
+    }
+
+    // Show clear message if non-PDF files are rejected
+    if (rejectedFiles.length > 0) {
+      const alertMsg = `${I18N[state.currentLang].rejectNonPdfMsg}${rejectedFiles.join(', ')} (Only PDF files are supported).`;
+      showPdfAlert(alertMsg, 'error');
+    }
+
+    if (validFiles.length === 0) return;
+
+    // 2. Process valid PDF files: read arrayBuffer, compute hash & pages
+    for (const file of validFiles) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const hash = await computeFileHash(arrayBuffer);
+        const pageCount = await getPdfPageCount(arrayBuffer);
+
+        const fileRecord = {
+          id: 'pdf_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8),
+          file: file,
+          name: file.name,
+          size: file.size,
+          hash: hash,
+          pageCount: pageCount,
+          isDuplicate: false,
+          duplicateWith: [],
+          matchedReqId: null
+        };
+
+        state.uploadedFiles.push(fileRecord);
+      } catch (err) {
+        console.error('Error processing PDF file:', file.name, err);
+        showPdfAlert(`Failed to process "${file.name}": ${err.message}`, 'error');
+      }
+    }
+
+    // 3. Update duplicate statuses & re-render UI
+    refreshDuplicateFlags();
+    renderUploadedFilesList();
+    renderRequirementsList();
+  }
+
+  /**
+   * Remove an uploaded PDF file
+   */
+  function removePdfFile(fileId) {
+    const fileIndex = state.uploadedFiles.findIndex(f => f.id === fileId);
+    if (fileIndex === -1) return;
+
+    const file = state.uploadedFiles[fileIndex];
+
+    // If file was matched to a requirement, unmatch it
+    for (const [reqId, matchedId] of Object.entries(state.documentMatches)) {
+      if (matchedId === fileId) {
+        delete state.documentMatches[reqId];
+      }
+    }
+
+    state.uploadedFiles.splice(fileIndex, 1);
+    refreshDuplicateFlags();
+    renderUploadedFilesList();
+    renderRequirementsList();
+  }
+
+  /**
+   * Render the list of uploaded PDF files
+   */
+  function renderUploadedFilesList() {
+    const count = state.uploadedFiles.length;
+    el.pdfUploadedCount.textContent = `${formatNumber(count)} ${count === 1 ? 'file' : 'files'}`;
+
+    if (count === 0) {
+      el.uploadedFilesContainer.style.display = 'none';
+      el.uploadedFilesList.innerHTML = '';
+      return;
+    }
+
+    el.uploadedFilesContainer.style.display = 'block';
+    el.uploadedFilesList.innerHTML = '';
+
+    const texts = I18N[state.currentLang];
+
+    state.uploadedFiles.forEach(f => {
+      const row = document.createElement('div');
+      row.className = `uploaded-file-row ${f.isDuplicate ? 'is-duplicate' : ''}`;
+
+      // Find match info if assigned
+      let matchInfoHtml = `<span style="color: var(--text-subtle); font-size: 0.775rem;">${escapeHtml(texts.unassignedText)}</span>`;
+      if (f.matchedReqId && state.sortedRequirements) {
+        const req = state.sortedRequirements.find(r => r.id === f.matchedReqId);
+        if (req) {
+          const title = state.currentLang === 'bn'
+            ? (req.title_bn || req.title_en)
+            : (req.title_en || req.title_bn);
+          matchInfoHtml = `<span class="matched-pill">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            ${escapeHtml(texts.assignedToPrefix)} #${formatNumber(req.order)} ${escapeHtml(title)}
+          </span>`;
+        }
+      }
+
+      // Duplicate warning badge if duplicate
+      let duplicateBadgeHtml = '';
+      if (f.isDuplicate) {
+        const dupNames = f.duplicateWith.join(', ');
+        duplicateBadgeHtml = `
+          <span class="badge badge-duplicate" title="${escapeHtml(texts.duplicateOf)} ${escapeHtml(dupNames)}">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            ${escapeHtml(texts.badgeDuplicate)}
+          </span>
+        `;
+      }
+
+      row.innerHTML = `
+        <div class="file-row-left">
+          <div class="file-row-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+          </div>
+          <span class="file-row-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="file-page-pill">${formatPages(f.pageCount)}</span>
+          ${duplicateBadgeHtml}
+        </div>
+        <div class="file-row-right">
+          ${matchInfoHtml}
+          <button type="button" class="file-delete-btn" data-file-id="${f.id}" title="Remove file">&times;</button>
+        </div>
+      `;
+
+      // Attach remove handler
+      row.querySelector('.file-delete-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        removePdfFile(f.id);
+      });
+
+      el.uploadedFilesList.appendChild(row);
+    });
+  }
+
+  /**
+   * Handle matching assignment between a requirement and a file
+   */
+  function handleMatchChange(reqId, selectedFileId) {
+    hidePdfAlert();
+    const texts = I18N[state.currentLang];
+
+    // If unassigning
+    if (!selectedFileId) {
+      delete state.documentMatches[reqId];
+      // Clear matchedReqId on previously matched file
+      state.uploadedFiles.forEach(f => {
+        if (f.matchedReqId === reqId) f.matchedReqId = null;
+      });
+      renderUploadedFilesList();
+      renderRequirementsList();
+      return;
+    }
+
+    const selectedFile = state.uploadedFiles.find(f => f.id === selectedFileId);
+    if (!selectedFile) return;
+
+    // Check duplicate restriction:
+    // If another file has identical content (same hash) and is matched to a DIFFERENT document, prevent match!
+    const duplicateAssignedToOther = state.uploadedFiles.find(other => 
+      other.id !== selectedFile.id &&
+      other.hash === selectedFile.hash &&
+      other.matchedReqId !== null &&
+      other.matchedReqId !== reqId
+    );
+
+    if (duplicateAssignedToOther) {
+      showPdfAlert(texts.duplicateMatchPreventedAlert, 'error');
+      renderRequirementsList();
+      return;
+    }
+
+    // Unassign any file previously assigned to this req
+    state.uploadedFiles.forEach(f => {
+      if (f.matchedReqId === reqId) f.matchedReqId = null;
+    });
+
+    // Unassign selectedFile if it was assigned to another req (one file -> at most one doc)
+    for (const [rId, fId] of Object.entries(state.documentMatches)) {
+      if (fId === selectedFileId && rId !== reqId) {
+        delete state.documentMatches[rId];
+      }
+    }
+
+    // Make match
+    state.documentMatches[reqId] = selectedFileId;
+    selectedFile.matchedReqId = reqId;
+
+    renderUploadedFilesList();
+    renderRequirementsList();
   }
 
   /**
@@ -331,15 +732,12 @@
     state.tenderData = rawData;
     state.sortedRequirements = sorted;
 
-    // Update file loaded UI indicator
     el.loadedFileName.textContent = filename;
     el.fileLoadedBadge.style.display = 'inline-flex';
 
-    // Show content, hide empty state
     el.emptyState.style.display = 'none';
     el.tenderContent.style.display = 'block';
 
-    // Render components
     renderSummaryHeader();
     renderRequirementsList();
 
@@ -347,7 +745,7 @@
   }
 
   /**
-   * Format deadline string with optional countdown
+   * Format deadline string with countdown
    */
   function formatDeadline(deadlineStr) {
     if (!deadlineStr || deadlineStr === 'N/A') return 'N/A';
@@ -357,13 +755,12 @@
       if (isNaN(date.getTime())) return escapeHtml(deadlineStr);
 
       const today = new Date();
-      // Reset hours for pure day comparison
       const deadlineDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
       const nowDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
       const diffTime = deadlineDate - nowDate;
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-      const isoDate = deadlineStr; // e.g. "2026-10-20"
+      const isoDate = deadlineStr;
       const localizedDate = state.currentLang === 'bn' ? toBanglaDigits(isoDate) : isoDate;
 
       if (diffDays >= 0) {
@@ -382,42 +779,24 @@
 
   /**
    * Render the Tender Summary Header
-   * Fields: Title, Entity, Bidder, Deadline, ID
    */
   function renderSummaryHeader() {
     if (!state.tenderData) return;
 
     const tender = state.tenderData.tender || state.tenderData;
 
-    // 1. Title
-    const title = tender.title || tender.tender_title || tender.tenderTitle || 'Tender Package';
-    el.summaryTitle.textContent = title;
+    el.summaryTitle.textContent = tender.title || tender.tender_title || tender.tenderTitle || 'Tender Package';
+    el.tenderIdVal.textContent = tender.tender_id || tender.id || tender.tenderId || 'N/A';
+    el.entityVal.textContent = tender.procuring_entity || tender.entity || tender.procuringEntity || tender.organization || 'N/A';
+    el.bidderVal.textContent = tender.bidder || tender.bidder_name || tender.bidderName || tender.vendor || 'N/A';
+    el.deadlineVal.innerHTML = formatDeadline(tender.submission_deadline || tender.deadline || tender.submissionDeadline || tender.due_date || 'N/A');
 
-    // 2. ID
-    const tenderId = tender.tender_id || tender.id || tender.tenderId || 'N/A';
-    el.tenderIdVal.textContent = tenderId;
-
-    // 3. Procuring Entity
-    const entity = tender.procuring_entity || tender.entity || tender.procuringEntity || tender.organization || 'N/A';
-    el.entityVal.textContent = entity;
-
-    // 4. Bidder
-    const bidder = tender.bidder || tender.bidder_name || tender.bidderName || tender.vendor || 'N/A';
-    el.bidderVal.textContent = bidder;
-
-    // 5. Deadline
-    const deadline = tender.submission_deadline || tender.deadline || tender.submissionDeadline || tender.due_date || 'N/A';
-    el.deadlineVal.innerHTML = formatDeadline(deadline);
-
-    // Total count
     const totalCount = state.sortedRequirements.length;
     el.totalReqCountVal.textContent = formatNumber(totalCount);
   }
 
   /**
-   * Render the Requirements List
-   * Document names strictly switch between title_en and title_bn based on global toggle
-   * Sorted strictly by order property
+   * Render the Requirements List with dynamic bilingual document names and file matching UI
    */
   function renderRequirementsList() {
     const list = state.sortedRequirements;
@@ -426,7 +805,6 @@
     const lang = state.currentLang;
     const texts = I18N[lang];
 
-    // Calculate counts
     const mandatoryCount = list.filter(r => r.mandatory === true).length;
     const optionalCount = list.length - mandatoryCount;
 
@@ -443,21 +821,21 @@
       return;
     }
 
-    // Render items strictly in order
+    // Render each requirement in strict order
     list.forEach(req => {
       const order = req.order !== undefined ? req.order : '-';
       const docId = req.id || '';
-      
+      const matchedFileId = state.documentMatches[docId] || null;
+      const matchedFile = state.uploadedFiles.find(f => f.id === matchedFileId);
+
       // Dynamic Title Switching based on active language toggle
       let primaryTitle = '';
       let secondaryTitle = '';
 
       if (lang === 'bn') {
-        // Bengali selected
         primaryTitle = req.title_bn || req.title_en || req.title || 'শিরোনামহীন নথি';
         secondaryTitle = req.title_en || '';
       } else {
-        // English selected
         primaryTitle = req.title_en || req.title_bn || req.title || 'Untitled Document';
         secondaryTitle = req.title_bn || '';
       }
@@ -475,46 +853,123 @@
         ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`
         : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
+      // Generate options for File Matching dropdown
+      let dropdownOptionsHtml = `<option value="">-- ${escapeHtml(texts.selectPdfPlaceholder)} --</option>`;
+
+      state.uploadedFiles.forEach(fileItem => {
+        const isCurrentMatch = fileItem.id === matchedFileId;
+        const isAssignedToOther = fileItem.matchedReqId !== null && fileItem.matchedReqId !== docId;
+
+        // Check duplicate rule: if another file has same hash and is matched to a different requirement
+        const duplicateAssignedToOther = state.uploadedFiles.find(other =>
+          other.id !== fileItem.id &&
+          other.hash === fileItem.hash &&
+          other.matchedReqId !== null &&
+          other.matchedReqId !== docId
+        );
+
+        let optionLabel = `${fileItem.name} (${formatPages(fileItem.pageCount)})`;
+        let isDisabled = false;
+
+        if (isCurrentMatch) {
+          optionLabel = `✓ ${optionLabel} [${texts.matchedBadge}]`;
+        } else if (isAssignedToOther) {
+          const otherReq = state.sortedRequirements.find(r => r.id === fileItem.matchedReqId);
+          const otherTitle = otherReq ? `#${otherReq.order}` : '';
+          optionLabel = `${optionLabel} (${texts.assignedToPrefix} ${otherTitle})`;
+          isDisabled = true;
+        } else if (duplicateAssignedToOther) {
+          optionLabel = `${optionLabel} (${texts.duplicateBlockedMsg})`;
+          isDisabled = true;
+        } else if (fileItem.isDuplicate) {
+          optionLabel = `[${texts.badgeDuplicate}] ${optionLabel}`;
+        }
+
+        dropdownOptionsHtml += `
+          <option value="${fileItem.id}" ${isCurrentMatch ? 'selected' : ''} ${isDisabled ? 'disabled' : ''}>
+            ${escapeHtml(optionLabel)}
+          </option>
+        `;
+      });
+
       const itemCard = document.createElement('div');
-      itemCard.className = 'req-item';
+      itemCard.className = `req-item ${matchedFile ? 'matched-ok' : ''}`;
       itemCard.setAttribute('role', 'listitem');
       itemCard.dataset.id = docId;
       itemCard.dataset.order = String(order);
 
       itemCard.innerHTML = `
-        <div class="req-left">
-          <div class="req-order-badge" title="${texts.orderLabel} ${escapeHtml(order)}">
-            #${formatNumber(order)}
-          </div>
-          <div class="req-info">
-            <div class="req-title-wrapper">
-              <span class="req-doc-title">${escapeHtml(primaryTitle)}</span>
-              ${docId ? `<span class="req-id-tag">${escapeHtml(docId)}</span>` : ''}
+        <div class="req-main-row">
+          <div class="req-left">
+            <div class="req-order-badge" title="${texts.orderLabel} ${escapeHtml(order)}">
+              #${formatNumber(order)}
             </div>
-            ${secondaryTitle ? `<span class="req-sub-title">${escapeHtml(secondaryTitle)}</span>` : ''}
+            <div class="req-info">
+              <div class="req-title-wrapper">
+                <span class="req-doc-title">${escapeHtml(primaryTitle)}</span>
+                ${docId ? `<span class="req-id-tag">${escapeHtml(docId)}</span>` : ''}
+              </div>
+              ${secondaryTitle ? `<span class="req-sub-title">${escapeHtml(secondaryTitle)}</span>` : ''}
+            </div>
+          </div>
+
+          <div class="req-badges">
+            <span class="badge ${mandatoryBadgeClass}">
+              <span class="stat-dot"></span>
+              ${escapeHtml(mandatoryBadgeText)}
+            </span>
+            <span class="badge ${expiryBadgeClass}">
+              ${expiryIcon}
+              ${escapeHtml(expiryBadgeText)}
+            </span>
           </div>
         </div>
 
-        <div class="req-badges">
-          <span class="badge ${mandatoryBadgeClass}">
-            <span class="stat-dot"></span>
-            ${escapeHtml(mandatoryBadgeText)}
+        <!-- Matching UI Dropdown -->
+        <div class="req-match-container">
+          <span class="match-label">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            PDF:
           </span>
-          <span class="badge ${expiryBadgeClass}">
-            ${expiryIcon}
-            ${escapeHtml(expiryBadgeText)}
-          </span>
+          <div class="match-select-wrapper">
+            <select class="match-dropdown" data-req-id="${docId}" aria-label="Assign PDF file to ${escapeHtml(primaryTitle)}">
+              ${dropdownOptionsHtml}
+            </select>
+            ${matchedFile ? `
+              <button type="button" class="unmatch-btn" data-req-id="${docId}" title="${texts.unmatchTooltip}">
+                &times; ${escapeHtml(texts.unmatchBtnText)}
+              </button>
+            ` : ''}
+          </div>
         </div>
       `;
+
+      // Dropdown change handler
+      const selectEl = itemCard.querySelector('.match-dropdown');
+      selectEl.addEventListener('change', (e) => {
+        handleMatchChange(docId, e.target.value);
+      });
+
+      // Unmatch button handler
+      const unmatchBtn = itemCard.querySelector('.unmatch-btn');
+      if (unmatchBtn) {
+        unmatchBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleMatchChange(docId, '');
+        });
+      }
 
       el.requirementsList.appendChild(itemCard);
     });
   }
 
   /**
-   * Read and parse a File object from input or drop
+   * Read and parse a JSON File
    */
-  function handleFile(file) {
+  function handleJsonFile(file) {
     if (!file) return;
 
     if (!file.name.toLowerCase().endsWith('.json') && file.type && !file.type.includes('json')) {
@@ -548,16 +1003,19 @@
   }
 
   /**
-   * Reset the current file and UI
+   * Reset data
    */
   function resetData() {
     state.tenderData = null;
     state.sortedRequirements = [];
+    state.documentMatches = {};
+    state.uploadedFiles.forEach(f => f.matchedReqId = null);
     el.fileInput.value = '';
     el.fileLoadedBadge.style.display = 'none';
     el.tenderContent.style.display = 'none';
     el.emptyState.style.display = 'flex';
     hideAlert();
+    renderUploadedFilesList();
   }
 
   /**
@@ -568,17 +1026,17 @@
     el.langEnBtn.addEventListener('click', () => setLanguage('en'));
     el.langBnBtn.addEventListener('click', () => setLanguage('bn'));
 
-    // Browse Button
+    // JSON Browse Button
     el.browseBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       el.fileInput.click();
     });
 
-    // File Input change
+    // JSON File Input change
     el.fileInput.addEventListener('change', (e) => {
       const file = e.target.files && e.target.files[0];
       if (file) {
-        handleFile(file);
+        handleJsonFile(file);
       }
     });
 
@@ -594,8 +1052,9 @@
       resetData();
     });
 
-    // Alert Close Button
+    // Alert Close Buttons
     el.alertCloseBtn.addEventListener('click', hideAlert);
+    el.pdfAlertCloseBtn.addEventListener('click', hidePdfAlert);
 
     // Copy Tender ID
     el.copyIdBtn.addEventListener('click', () => {
@@ -615,9 +1074,8 @@
       }
     });
 
-    // Drag and Drop support
+    // Drag and Drop for JSON
     const dropZone = el.dropZone;
-
     ['dragenter', 'dragover'].forEach(eventName => {
       dropZone.addEventListener(eventName, (e) => {
         e.preventDefault();
@@ -625,7 +1083,6 @@
         dropZone.classList.add('dragover');
       });
     });
-
     ['dragleave', 'drop'].forEach(eventName => {
       dropZone.addEventListener(eventName, (e) => {
         e.preventDefault();
@@ -633,16 +1090,54 @@
         dropZone.classList.remove('dragover');
       });
     });
-
     dropZone.addEventListener('drop', (e) => {
       const dt = e.dataTransfer;
       const files = dt.files;
       if (files && files.length > 0) {
-        handleFile(files[0]);
+        handleJsonFile(files[0]);
       }
     });
 
-    // Keyboard navigation: pressing Space or Enter on language buttons
+    // PDF Browse Button
+    el.browsePdfBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      el.pdfFileInput.click();
+    });
+
+    // PDF File Input change
+    el.pdfFileInput.addEventListener('change', (e) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        handlePdfFiles(files);
+        el.pdfFileInput.value = ''; // Reset input to allow re-uploading modified files
+      }
+    });
+
+    // PDF Drag and Drop
+    const pdfDropZone = el.pdfDropZone;
+    ['dragenter', 'dragover'].forEach(eventName => {
+      pdfDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        pdfDropZone.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+      pdfDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        pdfDropZone.classList.remove('dragover');
+      });
+    });
+    pdfDropZone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files && files.length > 0) {
+        handlePdfFiles(files);
+      }
+    });
+
+    // Keyboard navigation for language buttons
     [el.langEnBtn, el.langBnBtn].forEach(btn => {
       btn.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -659,7 +1154,6 @@
     setLanguage('en');
   }
 
-  // Run on DOM ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
@@ -667,4 +1161,3 @@
   }
 
 })();
-

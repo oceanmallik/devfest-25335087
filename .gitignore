@@ -1,0 +1,9 @@
+// Ignore all files
+*
+
+// Unignore some file types
+!.gitignore
+!.html
+!.css
+!.js
+!.md

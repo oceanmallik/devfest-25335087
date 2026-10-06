@@ -1547,6 +1547,24 @@
         color: cTextMuted
       });
 
+      // Embed Company Logo on Cover Page if available
+      try {
+        const logoResp = await fetch('company_logo.png');
+        if (logoResp.ok) {
+          const logoBytes = await logoResp.arrayBuffer();
+          const embeddedLogo = await pdfDoc.embedPng(logoBytes);
+          const logoDims = embeddedLogo.scaleToFit(44, 44);
+          coverPage.drawImage(embeddedLogo, {
+            x: marginX + contentWidth - logoDims.width,
+            y: height - 80,
+            width: logoDims.width,
+            height: logoDims.height
+          });
+        }
+      } catch (err) {
+        // Fallback gracefully if logo cannot be fetched
+      }
+
       coverPage.drawLine({
         start: { x: marginX, y: height - 86 },
         end: { x: marginX + contentWidth, y: height - 86 },

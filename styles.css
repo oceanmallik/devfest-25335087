@@ -141,6 +141,15 @@ body {
   flex-shrink: 0;
 }
 
+.brand-logo-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+  display: block;
+}
+
 .brand-title {
   font-size: 1.15rem;
   font-weight: 700;

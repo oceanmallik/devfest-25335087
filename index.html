@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tender Document Package Builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Top Navigation / Header -->
+    <header class="navbar">
+      <div class="nav-container">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="16" y1="13" x2="8" y2="13"></line>
+              <line x1="16" y1="17" x2="8" y2="17"></line>
+              <polyline points="10 9 9 9 8 9"></polyline>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1 class="brand-title" data-i18n="appTitle">Tender Document Package Builder</h1>
+            <p class="brand-subtitle" data-i18n="appSubtitle">Frontend Document Processor & Requirement Validator</p>
+          </div>
+        </div>
+
+        <!-- Global Language Toggle -->
+        <div class="lang-switch-wrapper" aria-label="Language Selector">
+          <span class="lang-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </span>
+          <div class="lang-toggle-group" role="radiogroup" aria-label="Language">
+            <button type="button" class="lang-btn active" id="langEnBtn" data-lang="en" aria-checked="true" role="radio">
+              English
+            </button>
+            <button type="button" class="lang-btn" id="langBnBtn" data-lang="bn" aria-checked="false" role="radio">
+              বাংলা
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+      
+      <!-- Upload Section -->
+      <section class="card upload-card" id="uploadSection">
+        <div class="upload-header">
+          <div class="section-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+          </div>
+          <div>
+            <h2 class="card-title" data-i18n="uploadTitle">Upload Requirements Configuration</h2>
+            <p class="card-desc" data-i18n="uploadDesc">Upload the tender requirements.json file to inspect details and document checklist.</p>
+          </div>
+        </div>
+
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="requirementsFileInput" class="file-input-hidden" accept=".json,application/json" aria-label="Upload requirements.json file">
+          <div class="drop-zone-content">
+            <div class="drop-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <path d="M12 18v-6"></path>
+                <path d="m9 15 3-3 3 3"></path>
+              </svg>
+            </div>
+            <p class="drop-primary-text" data-i18n="dropText">Drag and drop your <strong>requirements.json</strong> here</p>
+            <p class="drop-secondary-text" data-i18n="orText">or</p>
+            <div class="drop-actions">
+              <button type="button" class="btn btn-primary" id="browseBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span data-i18n="browseBtnText">Select File</span>
+              </button>
+              <button type="button" class="btn btn-secondary" id="loadSampleBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                </svg>
+                <span data-i18n="loadSampleBtnText">Load Sample Data</span>
+              </button>
+            </div>
+            <div class="file-loaded-badge" id="fileLoadedBadge" style="display: none;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span id="loadedFileName">requirements.json</span>
+              <button type="button" class="clear-file-btn" id="clearFileBtn" title="Reset file">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Alert messages -->
+        <div class="alert-box" id="alertBox" style="display: none;" role="alert">
+          <span class="alert-icon" id="alertIcon"></span>
+          <span class="alert-text" id="alertText"></span>
+          <button type="button" class="alert-close" id="alertCloseBtn">&times;</button>
+        </div>
+      </section>
+
+      <!-- Empty Welcome State (shown before JSON is loaded) -->
+      <section class="card empty-state" id="emptyState">
+        <div class="empty-state-graphic">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
+        </div>
+        <h3 class="empty-state-title" data-i18n="emptyStateTitle">No Tender Data Loaded</h3>
+        <p class="empty-state-desc" data-i18n="emptyStateDesc">
+          Please upload a valid <code>requirements.json</code> or click "Load Sample Data" above to view the tender summary header and ordered requirements.
+        </p>
+      </section>
+
+      <!-- Loaded Content Section (Summary Header + Requirements List) -->
+      <div id="tenderContent" style="display: none;">
+        
+        <!-- Summary Header Card -->
+        <section class="card summary-card" id="summaryHeader" aria-labelledby="summaryTitle">
+          <div class="summary-top-row">
+            <div class="summary-title-wrapper">
+              <span class="badge badge-primary-light" data-i18n="summaryBadge">Tender Package</span>
+              <h2 id="summaryTitle" class="tender-main-title">--</h2>
+            </div>
+            <div class="tender-id-badge-container">
+              <span class="meta-label" data-i18n="tenderIdLabel">Tender ID</span>
+              <div class="tender-id-pill">
+                <span class="tender-id-val" id="tenderIdVal">--</span>
+                <button type="button" class="copy-id-btn" id="copyIdBtn" title="Copy Tender ID">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Summary Grid Details -->
+          <div class="summary-grid">
+            <!-- Entity -->
+            <div class="summary-item">
+              <div class="summary-item-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 21h18"></path>
+                  <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"></path>
+                  <path d="M9 9h1"></path>
+                  <path d="M9 13h1"></path>
+                  <path d="M9 17h1"></path>
+                  <path d="M14 9h1"></path>
+                  <path d="M14 13h1"></path>
+                  <path d="M14 17h1"></path>
+                </svg>
+              </div>
+              <div class="summary-item-body">
+                <span class="item-label" data-i18n="entityLabel">Procuring Entity</span>
+                <span class="item-value" id="entityVal">--</span>
+              </div>
+            </div>
+
+            <!-- Bidder -->
+            <div class="summary-item">
+              <div class="summary-item-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="8.5" cy="7" r="4"></circle>
+                  <polyline points="17 11 19 13 23 9"></polyline>
+                </svg>
+              </div>
+              <div class="summary-item-body">
+                <span class="item-label" data-i18n="bidderLabel">Bidder Name</span>
+                <span class="item-value" id="bidderVal">--</span>
+              </div>
+            </div>
+
+            <!-- Deadline -->
+            <div class="summary-item">
+              <div class="summary-item-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+              </div>
+              <div class="summary-item-body">
+                <span class="item-label" data-i18n="deadlineLabel">Submission Deadline</span>
+                <span class="item-value" id="deadlineVal">--</span>
+              </div>
+            </div>
+
+            <!-- Total Requirements Count -->
+            <div class="summary-item">
+              <div class="summary-item-icon">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 11 12 14 22 4"></polyline>
+                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                </svg>
+              </div>
+              <div class="summary-item-body">
+                <span class="item-label" data-i18n="requirementsCountLabel">Required Documents</span>
+                <span class="item-value" id="totalReqCountVal">0</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Requirements List Section -->
+        <section class="card requirements-card" aria-labelledby="requirementsHeading">
+          <div class="requirements-header">
+            <div>
+              <div class="title-with-pill">
+                <h2 id="requirementsHeading" class="card-title" data-i18n="requirementsTitle">Required Documents</h2>
+                <span class="count-pill" id="reqListCount">0</span>
+              </div>
+              <p class="card-desc" data-i18n="requirementsDesc">
+                Documents sorted strictly by their specified order property.
+              </p>
+            </div>
+
+            <!-- Quick summary badges -->
+            <div class="meta-stats-row">
+              <span class="stat-badge stat-mandatory" id="mandatoryStatBadge">
+                <span class="stat-dot"></span>
+                <span id="mandatoryCount">0</span> <span data-i18n="statMandatory">Mandatory</span>
+              </span>
+              <span class="stat-badge stat-optional" id="optionalStatBadge">
+                <span class="stat-dot"></span>
+                <span id="optionalCount">0</span> <span data-i18n="statOptional">Optional</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Document List Container -->
+          <div class="requirements-list" id="requirementsList" role="list">
+            <!-- Dynamically populated rows -->
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div class="footer-container">
+        <p data-i18n="footerText">Tender Document Package Builder &bull; Vanilla Frontend Web App</p>
+      </div>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

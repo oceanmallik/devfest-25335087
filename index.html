@@ -51,131 +51,141 @@
     <!-- Main Content -->
     <main class="main-container">
       
-      <!-- 1. Requirements JSON Upload Section -->
-      <section class="card upload-card" id="uploadSection">
-        <div class="upload-header">
-          <div class="section-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-          </div>
-          <div>
-            <h2 class="card-title" data-i18n="uploadTitle">Upload Requirements Configuration</h2>
-            <p class="card-desc" data-i18n="uploadDesc">Upload the tender requirements.json file to inspect details and document checklist.</p>
-          </div>
-        </div>
-
-        <div class="drop-zone" id="dropZone">
-          <input type="file" id="requirementsFileInput" class="file-input-hidden" accept=".json,application/json" aria-label="Upload requirements.json file">
-          <div class="drop-zone-content">
-            <div class="drop-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <path d="M12 18v-6"></path>
-                <path d="m9 15 3-3 3 3"></path>
-              </svg>
-            </div>
-            <p class="drop-primary-text" data-i18n="dropText">Drag and drop your <strong>requirements.json</strong> here</p>
-            <p class="drop-secondary-text" data-i18n="orText">or</p>
-            <div class="drop-actions">
-              <button type="button" class="btn btn-primary" id="browseBtn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <!-- 1. Combined Upload Section (Requirements JSON & Candidate PDF Documents) -->
+      <section class="card upload-card upload-combined-card" id="uploadSection">
+        <div class="upload-grid-row">
+          
+          <!-- Column A: Requirements JSON Configuration -->
+          <div class="upload-col upload-col-json">
+            <div class="upload-header">
+              <div class="section-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                   <polyline points="17 8 12 3 7 8"></polyline>
                   <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
-                <span data-i18n="browseBtnText">Select File</span>
-              </button>
-              <button type="button" class="btn btn-secondary" id="loadSampleBtn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+              </div>
+              <div>
+                <h2 class="card-title" data-i18n="uploadTitle">Upload Requirements Configuration</h2>
+                <p class="card-desc" data-i18n="uploadDesc">Upload the tender requirements file to inspect details and document checklist.</p>
+              </div>
+            </div>
+
+            <div class="drop-zone" id="dropZone">
+              <input type="file" id="requirementsFileInput" class="file-input-hidden" accept=".json,application/json" aria-label="Upload requirements JSON file">
+              <div class="drop-zone-content">
+                <div class="drop-icon">
+                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <path d="M12 18v-6"></path>
+                    <path d="m9 15 3-3 3 3"></path>
+                  </svg>
+                </div>
+                <p class="drop-primary-text" data-i18n="dropText">Drag and drop your <strong>JSON file</strong> here</p>
+                <p class="drop-secondary-text" data-i18n="orText">or</p>
+                <div class="drop-actions">
+                  <button type="button" class="btn btn-primary" id="browseBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <span data-i18n="browseBtnText">Select File</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary" id="loadSampleBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    <span data-i18n="loadSampleBtnText">Load Sample Data</span>
+                  </button>
+                </div>
+                <div class="file-loaded-badge" id="fileLoadedBadge" style="display: none !important;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                  <span id="loadedFileName"></span>
+                  <button type="button" class="clear-file-btn" id="clearFileBtn" title="Reset file">&times;</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Alert messages -->
+            <div class="alert-box" id="alertBox" style="display: none;" role="alert">
+              <span class="alert-icon" id="alertIcon"></span>
+              <span class="alert-text" id="alertText"></span>
+              <button type="button" class="alert-close" id="alertCloseBtn">&times;</button>
+            </div>
+          </div>
+
+          <!-- Divider -->
+          <div class="upload-divider" aria-hidden="true"></div>
+
+          <!-- Column B: PDF Documents Upload & Duplicate Detection -->
+          <div class="upload-col upload-col-pdf" id="pdfUploadSection">
+            <div class="upload-header">
+              <div class="section-icon section-icon-pdf">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <path d="M9 15h6"></path>
+                  <path d="M9 11h6"></path>
                 </svg>
-                <span data-i18n="loadSampleBtnText">Load Sample Data</span>
-              </button>
+              </div>
+              <div style="flex: 1;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                  <h2 class="card-title" data-i18n="pdfUploadTitle">Upload Tender Documents (PDF)</h2>
+                  <span class="count-pill" id="pdfUploadedCount">0 files</span>
+                </div>
+                <p class="card-desc" data-i18n="pdfUploadDesc">
+                  Upload PDF files to match against required documents. Non-PDF files are strictly rejected.
+                </p>
+              </div>
             </div>
-            <div class="file-loaded-badge" id="fileLoadedBadge" style="display: none;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span id="loadedFileName">requirements.json</span>
-              <button type="button" class="clear-file-btn" id="clearFileBtn" title="Reset file">&times;</button>
+
+            <!-- PDF Drop Zone (Multiple PDF files) -->
+            <div class="drop-zone" id="pdfDropZone">
+              <input type="file" id="pdfFileInput" class="file-input-hidden" multiple accept=".pdf,application/pdf" aria-label="Upload PDF files">
+              <div class="drop-zone-content">
+                <div class="drop-icon drop-icon-pdf">
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="12" y1="18" x2="12" y2="12"></line>
+                    <line x1="9" y1="15" x2="15" y2="15"></line>
+                  </svg>
+                </div>
+                <p class="drop-primary-text" data-i18n="pdfDropText">
+                  Drag and drop <strong>PDF files</strong> here (multiple files supported)
+                </p>
+                <p class="drop-secondary-text" data-i18n="orText">or</p>
+                <div class="drop-actions">
+                  <button type="button" class="btn btn-primary" id="browsePdfBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <span data-i18n="browsePdfBtnText">Select PDF Files</span>
+                  </button>
+                </div>
+              </div>
             </div>
+
+            <!-- PDF Alert Box for Rejection or Warnings -->
+            <div class="alert-box" id="pdfAlertBox" style="display: none;" role="alert">
+              <span class="alert-icon" id="pdfAlertIcon"></span>
+              <span class="alert-text" id="pdfAlertText" style="flex: 1;"></span>
+              <button type="button" class="alert-close" id="pdfAlertCloseBtn">&times;</button>
+            </div>
+
           </div>
         </div>
 
-        <!-- Alert messages -->
-        <div class="alert-box" id="alertBox" style="display: none;" role="alert">
-          <span class="alert-icon" id="alertIcon"></span>
-          <span class="alert-text" id="alertText"></span>
-          <button type="button" class="alert-close" id="alertCloseBtn">&times;</button>
-        </div>
-      </section>
-
-      <!-- 2. PDF Documents Upload & Duplicate Detection Section (Always Visible) -->
-      <section class="card pdf-upload-card" id="pdfUploadSection">
-        <div class="upload-header">
-          <div class="section-icon section-icon-pdf">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <path d="M9 15h6"></path>
-              <path d="M9 11h6"></path>
-            </svg>
-          </div>
-          <div style="flex: 1;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
-              <h2 class="card-title" data-i18n="pdfUploadTitle">Upload Tender Documents (PDF)</h2>
-              <span class="count-pill" id="pdfUploadedCount">0 files</span>
-            </div>
-            <p class="card-desc" data-i18n="pdfUploadDesc">
-              Upload PDF files to match against required documents. Non-PDF files are strictly rejected.
-            </p>
-          </div>
-        </div>
-
-        <!-- PDF Drop Zone (Multiple PDF files) -->
-        <div class="drop-zone" id="pdfDropZone">
-          <input type="file" id="pdfFileInput" class="file-input-hidden" multiple accept=".pdf,application/pdf" aria-label="Upload PDF files">
-          <div class="drop-zone-content">
-            <div class="drop-icon drop-icon-pdf">
-              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="12" y1="18" x2="12" y2="12"></line>
-                <line x1="9" y1="15" x2="15" y2="15"></line>
-              </svg>
-            </div>
-            <p class="drop-primary-text" data-i18n="pdfDropText">
-              Drag and drop <strong>PDF files</strong> here (multiple files supported)
-            </p>
-            <p class="drop-secondary-text" data-i18n="orText">or</p>
-            <div class="drop-actions">
-              <button type="button" class="btn btn-primary" id="browsePdfBtn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="17 8 12 3 7 8"></polyline>
-                  <line x1="12" y1="3" x2="12" y2="15"></line>
-                </svg>
-                <span data-i18n="browsePdfBtnText">Select PDF Files</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- PDF Alert Box for Rejection or Warnings -->
-        <div class="alert-box" id="pdfAlertBox" style="display: none;" role="alert">
-          <span class="alert-icon" id="pdfAlertIcon"></span>
-          <span class="alert-text" id="pdfAlertText" style="flex: 1;"></span>
-          <button type="button" class="alert-close" id="pdfAlertCloseBtn">&times;</button>
-        </div>
-
-        <!-- Uploaded Files List -->
+        <!-- Uploaded Files List (Full Width in File Manager Icon Layout) -->
         <div class="uploaded-files-container" id="uploadedFilesContainer" style="display: none;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
             <h3 class="uploaded-files-title" data-i18n="uploadedPdfsHeading">Uploaded PDF Files</h3>
             <span id="duplicateSummaryBadge" style="display: none;" class="badge badge-duplicate">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -187,7 +197,7 @@
             </span>
           </div>
           <div class="uploaded-files-list" id="uploadedFilesList">
-            <!-- Dynamically populated PDF file cards -->
+            <!-- Dynamically populated PDF file cards (File-manager icon style) -->
           </div>
         </div>
       </section>

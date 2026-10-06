@@ -119,8 +119,8 @@
       appTitle: "Tender Document Package Builder",
       appSubtitle: "Frontend Document Processor & Requirement Validator",
       uploadTitle: "Upload Requirements Configuration",
-      uploadDesc: "Upload the tender requirements.json file to inspect details and document checklist.",
-      dropText: 'Drag and drop your <strong>requirements.json</strong> here',
+      uploadDesc: "Upload the tender requirements file to inspect details and document checklist.",
+      dropText: 'Drag and drop your <strong>JSON file</strong> here',
       orText: "or",
       browseBtnText: "Select File",
       loadSampleBtnText: "Load Sample Data",
@@ -196,8 +196,8 @@
       appTitle: "দরপত্র নথি প্যাকেজ প্রস্তুতকারক",
       appSubtitle: "ফ্রন্টএন্ড নথি প্রক্রিয়াকরণ ও শর্তাবলি যাচাইকারী",
       uploadTitle: "রিকোয়ারমেন্টস কনফিগারেশন আপলোড",
-      uploadDesc: "দরপত্রের বিস্তারিত ও প্রয়োজনীয় নথিপত্রের তালিকা দেখতে requirements.json ফাইলটি আপলোড করুন।",
-      dropText: 'আপনার <strong>requirements.json</strong> ফাইলটি এখানে ড্র্যাগ করুন',
+      uploadDesc: "দরপত্রের বিস্তারিত ও প্রয়োজনীয় নথিপত্রের তালিকা দেখতে কনফিগারেশন ফাইলটি আপলোড করুন।",
+      dropText: 'আপনার <strong>JSON ফাইল</strong> এখানে ড্র্যাগ করুন',
       orText: "অথবা",
       browseBtnText: "ফাইল নির্বাচন করুন",
       loadSampleBtnText: "নমুনা ডেটা লোড করুন",
@@ -619,10 +619,11 @@
    * Render the list of uploaded PDF files
    */
   function renderUploadedFilesList() {
+    const hasJson = !!state.tenderData;
     const count = state.uploadedFiles.length;
     el.pdfUploadedCount.textContent = `${formatNumber(count)} ${count === 1 ? 'file' : 'files'}`;
 
-    if (count === 0) {
+    if (!hasJson && count === 0) {
       el.uploadedFilesContainer.style.display = 'none';
       el.uploadedFilesList.innerHTML = '';
       return;
@@ -632,6 +633,45 @@
     el.uploadedFilesList.innerHTML = '';
 
     const texts = I18N[state.currentLang];
+
+    // If requirements.json is loaded, render it FIRST in line
+    if (hasJson) {
+      const jsonCard = document.createElement('div');
+      jsonCard.className = 'uploaded-file-row file-row-json';
+      const jsonFileName = el.loadedFileName.textContent || 'requirements.json';
+      const reqCount = state.sortedRequirements ? state.sortedRequirements.length : 0;
+      const countLabel = state.currentLang === 'bn' ? `${formatNumber(reqCount)}টি শর্ত` : `${formatNumber(reqCount)} requirements`;
+      const configLabel = state.currentLang === 'bn' ? 'কনফিগ সক্রিয়' : 'Config Active';
+
+      jsonCard.innerHTML = `
+        <div class="file-row-left">
+          <div class="file-row-icon file-row-icon-json">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+              <line x1="9" y1="13" x2="15" y2="13"></line>
+              <line x1="9" y1="17" x2="13" y2="17"></line>
+            </svg>
+          </div>
+          <span class="file-row-name" title="${escapeHtml(jsonFileName)}">${escapeHtml(jsonFileName)}</span>
+          <span class="file-page-pill file-json-pill">${countLabel}</span>
+        </div>
+        <div class="file-row-right">
+          <span class="matched-pill matched-pill-json">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+            ${configLabel}
+          </span>
+          <button type="button" class="file-delete-btn" id="jsonCardRemoveBtn" title="Reset requirements file">&times;</button>
+        </div>
+      `;
+
+      jsonCard.querySelector('#jsonCardRemoveBtn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        resetData();
+      });
+
+      el.uploadedFilesList.appendChild(jsonCard);
+    }
 
     state.uploadedFiles.forEach(f => {
       const row = document.createElement('div');
@@ -958,7 +998,7 @@
     state.sortedRequirements = sorted;
 
     el.loadedFileName.textContent = filename;
-    el.fileLoadedBadge.style.display = 'inline-flex';
+    el.fileLoadedBadge.style.display = 'none';
 
     el.emptyState.style.display = 'none';
     el.tenderContent.style.display = 'block';
@@ -966,6 +1006,7 @@
     renderSummaryHeader();
     renderRequirementsList();
     validateAndRenderPackageStatus();
+    renderUploadedFilesList();
 
     return true;
   }

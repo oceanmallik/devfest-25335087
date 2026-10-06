@@ -1,13 +1,21 @@
 /**
  * Tender Document Package Builder
  * Pure Vanilla JavaScript (No Frameworks, No Bundlers)
- * Includes: PDF handling, pdf.js page count, duplicate detection, and document matching UI
+ * Features:
+ * - Requirements JSON loading & strict sorting
+ * - PDF uploads with pdf.js page counting
+ * - Duplicate content detection (SHA-256)
+ * - 1-to-1 Document matching UI
+ * - Conditional expiry date input (has_expiry = true & file matched)
+ * - Strict live document status rules ('Missing', 'Expiry date needed', 'Expired', 'Not provided', 'OK')
+ * - Package generation validation & blocking issue reporting
+ * - Full bilingual support (English & Bangla)
  */
 
 (function () {
   'use strict';
 
-  // Configure pdf.js worker if library is present
+  // Configure pdf.js worker if library is loaded from CDN
   if (window.pdfjsLib) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
@@ -159,7 +167,26 @@
       unassignedText: "Unassigned",
       duplicateBlockedMsg: "Blocked: Duplicate of file assigned to another document",
       duplicateMatchPreventedAlert: "Cannot match: A duplicate of this file is already matched to another document.",
-      rejectNonPdfMsg: "Rejected non-PDF file(s): "
+      rejectNonPdfMsg: "Rejected non-PDF file(s): ",
+      // Status Rules strings
+      statusMissing: "Missing",
+      statusExpiryNeeded: "Expiry date needed",
+      statusExpired: "Expired",
+      statusNotProvided: "Not provided",
+      statusOk: "OK",
+      expiryDateLabel: "Expiry Date",
+      expiryDateInputPlaceholder: "YYYY-MM-DD",
+      // Generate Package strings
+      generateTitle: "Generate Package",
+      generateDesc: "Package generation is blocked while any document has an issue.",
+      generateBtnText: "Generate Package",
+      generationBlockedHeader: "Package generation is blocked by the following issue(s):",
+      generationReadyMsg: "All documents are compliant and verified! Package is ready to generate.",
+      reasonMissing: "Required document has no file matched",
+      reasonExpiryNeeded: "Expiry date must be entered",
+      reasonExpired: "Expiry date ({exp}) is before submission deadline ({dl})",
+      reasonNotProvided: "Optional document not provided",
+      reasonOk: "Verified and compliant"
     },
     bn: {
       appTitle: "দরপত্র নথি প্যাকেজ প্রস্তুতকারক",
@@ -213,7 +240,26 @@
       unassignedText: "অসংযুক্ত",
       duplicateBlockedMsg: "নিষিদ্ধ: অন্য নথিতে সংযুক্ত ফাইলের হুবহু ডুপ্লিকেট",
       duplicateMatchPreventedAlert: "ম্যাচ করা সম্ভব নয়: এই ফাইলের একটি ডুপ্লিকেট ইতিমধ্যে অন্য নথিতে সংযুক্ত আছে।",
-      rejectNonPdfMsg: "নন-PDF ফাইল বাতিল করা হয়েছে: "
+      rejectNonPdfMsg: "নন-PDF ফাইল বাতিল করা হয়েছে: ",
+      // Status Rules strings
+      statusMissing: "অনুপস্থিত (Missing)",
+      statusExpiryNeeded: "মেয়াদ আবশ্যক (Expiry needed)",
+      statusExpired: "মেয়াদোত্তীর্ণ (Expired)",
+      statusNotProvided: "দেওয়া হয়নি (Not provided)",
+      statusOk: "সঠিক (OK)",
+      expiryDateLabel: "মেয়াদ উত্তীর্ণের তারিখ",
+      expiryDateInputPlaceholder: "YYYY-MM-DD",
+      // Generate Package strings
+      generateTitle: "প্যাকেজ তৈরি করুন",
+      generateDesc: "কোনো নথিতে সমস্যা থাকলে প্যাকেজ তৈরি ব্লক থাকবে।",
+      generateBtnText: "প্যাকেজ তৈরি করুন",
+      generationBlockedHeader: "নিম্নলিখিত সমস্যার কারণে প্যাকেজ তৈরি বন্ধ রয়েছে:",
+      generationReadyMsg: "সমস্ত নথি যথাযথভাবে যাচাই করা হয়েছে! প্যাকেজ তৈরি করতে প্রস্তুত।",
+      reasonMissing: "আবশ্যিক নথিতে কোনো ফাইল সংযুক্ত করা হয়নি",
+      reasonExpiryNeeded: "মেয়াদ উত্তীর্ণের তারিখ প্রবেশ করানো প্রয়োজন",
+      reasonExpired: "মেয়াদ উত্তীর্ণের তারিখ ({exp}) জমা দেওয়ার শেষ সময়ের ({dl}) পূর্বে",
+      reasonNotProvided: "ঐচ্ছিক নথি প্রদান করা হয়নি",
+      reasonOk: "যাচাইকৃত ও প্রস্তুত"
     }
   };
 
@@ -222,8 +268,9 @@
     currentLang: 'en', // 'en' or 'bn'
     tenderData: null,
     sortedRequirements: [],
-    uploadedFiles: [], // Array of { id, file, name, size, hash, pageCount, isDuplicate, duplicateWith: [] }
-    documentMatches: {} // Map: reqId -> fileId
+    uploadedFiles: [], // Array of { id, file, name, size, hash, pageCount, isDuplicate, duplicateWith: [], matchedReqId }
+    documentMatches: {}, // Map: reqId -> fileId
+    expiryDates: {} // Map: reqId -> 'YYYY-MM-DD'
   };
 
   // DOM Elements
@@ -264,7 +311,12 @@
     uploadedFilesList: document.getElementById('uploadedFilesList'),
     pdfUploadedCount: document.getElementById('pdfUploadedCount'),
     duplicateSummaryBadge: document.getElementById('duplicateSummaryBadge'),
-    duplicateSummaryText: document.getElementById('duplicateSummaryText')
+    duplicateSummaryText: document.getElementById('duplicateSummaryText'),
+    // Generate Package elements
+    generateSection: document.getElementById('generateSection'),
+    generatePackageBtn: document.getElementById('generatePackageBtn'),
+    generateStatusSummary: document.getElementById('generateStatusSummary'),
+    generateWarningBox: document.getElementById('generateWarningBox')
   };
 
   /**
@@ -320,9 +372,6 @@
     el.alertBox.style.display = 'flex';
   }
 
-  /**
-   * Hide JSON alert
-   */
   function hideAlert() {
     el.alertBox.style.display = 'none';
   }
@@ -336,9 +385,6 @@
     el.pdfAlertBox.style.display = 'flex';
   }
 
-  /**
-   * Hide PDF alert
-   */
   function hidePdfAlert() {
     el.pdfAlertBox.style.display = 'none';
   }
@@ -379,6 +425,7 @@
     if (state.tenderData) {
       renderSummaryHeader();
       renderRequirementsList();
+      validateAndRenderPackageStatus();
     }
 
     renderUploadedFilesList();
@@ -394,7 +441,6 @@
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     } catch (e) {
       console.warn('Crypto subtle digest error:', e);
-      // Fallback fast checksum
       let hash = 0;
       const bytes = new Uint8Array(arrayBuffer);
       for (let i = 0; i < bytes.length; i += 4) {
@@ -412,12 +458,10 @@
     try {
       const bytes = new Uint8Array(arrayBuffer);
       const text = new TextDecoder('latin1').decode(bytes);
-      // Match /Type /Page (excluding /Pages)
       const matches = text.match(/\/Type\s*\/Page(?![sA-Za-z])/g);
       if (matches && matches.length > 0) {
         return matches.length;
       }
-      // Match /Count in Pages dictionary
       const countMatch = text.match(/\/Type\s*\/Pages[^>]*\/Count\s+(\d+)/);
       if (countMatch && countMatch[1]) {
         return parseInt(countMatch[1], 10);
@@ -501,7 +545,6 @@
       }
     }
 
-    // Show clear message if non-PDF files are rejected
     if (rejectedFiles.length > 0) {
       const alertMsg = `${I18N[state.currentLang].rejectNonPdfMsg}${rejectedFiles.join(', ')} (Only PDF files are supported).`;
       showPdfAlert(alertMsg, 'error');
@@ -539,6 +582,7 @@
     refreshDuplicateFlags();
     renderUploadedFilesList();
     renderRequirementsList();
+    validateAndRenderPackageStatus();
   }
 
   /**
@@ -547,8 +591,6 @@
   function removePdfFile(fileId) {
     const fileIndex = state.uploadedFiles.findIndex(f => f.id === fileId);
     if (fileIndex === -1) return;
-
-    const file = state.uploadedFiles[fileIndex];
 
     // If file was matched to a requirement, unmatch it
     for (const [reqId, matchedId] of Object.entries(state.documentMatches)) {
@@ -561,6 +603,7 @@
     refreshDuplicateFlags();
     renderUploadedFilesList();
     renderRequirementsList();
+    validateAndRenderPackageStatus();
   }
 
   /**
@@ -585,7 +628,6 @@
       const row = document.createElement('div');
       row.className = `uploaded-file-row ${f.isDuplicate ? 'is-duplicate' : ''}`;
 
-      // Find match info if assigned
       let matchInfoHtml = `<span style="color: var(--text-subtle); font-size: 0.775rem;">${escapeHtml(texts.unassignedText)}</span>`;
       if (f.matchedReqId && state.sortedRequirements) {
         const req = state.sortedRequirements.find(r => r.id === f.matchedReqId);
@@ -600,7 +642,6 @@
         }
       }
 
-      // Duplicate warning badge if duplicate
       let duplicateBadgeHtml = '';
       if (f.isDuplicate) {
         const dupNames = f.duplicateWith.join(', ');
@@ -634,7 +675,6 @@
         </div>
       `;
 
-      // Attach remove handler
       row.querySelector('.file-delete-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         removePdfFile(f.id);
@@ -645,29 +685,193 @@
   }
 
   /**
+   * =========================================================================
+   * Document Status Validation Logic (Section 5 Rules)
+   *
+   * Exact Rules:
+   * 'Missing': Required document (mandatory = true), no file matched. -> BLOCKS
+   * 'Expiry date needed': has_expiry = true, file matched, but no date entered. -> BLOCKS
+   * 'Expired': Date entered is before the tender's submission_deadline. -> BLOCKS
+   * 'Not provided': Optional document (mandatory = false), no file matched. -> DOES NOT BLOCK
+   * 'OK': File matched, and (if applicable) expiry date is on or after the deadline. -> DOES NOT BLOCK
+   * =========================================================================
+   */
+  function getDocumentStatus(req) {
+    const isMandatory = req.mandatory === true;
+    const hasExpiry = req.has_expiry === true;
+    const matchedFileId = state.documentMatches[req.id];
+    const matchedFile = state.uploadedFiles.find(f => f.id === matchedFileId);
+    const expiryDate = (state.expiryDates[req.id] || '').trim();
+
+    const tender = state.tenderData ? (state.tenderData.tender || state.tenderData) : {};
+    const deadlineStr = (tender.submission_deadline || tender.deadline || '').trim();
+
+    // 1. No file matched
+    if (!matchedFile) {
+      if (isMandatory) {
+        return {
+          code: 'Missing',
+          cssClass: 'status-pill-missing',
+          borderClass: 'status-border-missing',
+          isBlocking: true,
+          label: I18N[state.currentLang].statusMissing,
+          reason: I18N[state.currentLang].reasonMissing
+        };
+      } else {
+        return {
+          code: 'Not provided',
+          cssClass: 'status-pill-not-provided',
+          borderClass: 'status-border-not-provided',
+          isBlocking: false,
+          label: I18N[state.currentLang].statusNotProvided,
+          reason: I18N[state.currentLang].reasonNotProvided
+        };
+      }
+    }
+
+    // 2. File IS matched: Check expiry if required
+    if (hasExpiry) {
+      // Expiry date needed
+      if (!expiryDate) {
+        return {
+          code: 'Expiry date needed',
+          cssClass: 'status-pill-needed',
+          borderClass: 'status-border-needed',
+          isBlocking: true,
+          label: I18N[state.currentLang].statusExpiryNeeded,
+          reason: I18N[state.currentLang].reasonExpiryNeeded
+        };
+      }
+
+      // Check if expired: before submission_deadline
+      // YYYY-MM-DD string comparison is lexicographically identical to chronological order
+      if (deadlineStr && expiryDate < deadlineStr) {
+        const reasonText = I18N[state.currentLang].reasonExpired
+          .replace('{exp}', expiryDate)
+          .replace('{dl}', deadlineStr);
+
+        return {
+          code: 'Expired',
+          cssClass: 'status-pill-expired',
+          borderClass: 'status-border-expired',
+          isBlocking: true,
+          label: I18N[state.currentLang].statusExpired,
+          reason: reasonText
+        };
+      }
+    }
+
+    // 3. Otherwise OK
+    return {
+      code: 'OK',
+      cssClass: 'status-pill-ok',
+      borderClass: 'status-border-ok',
+      isBlocking: false,
+      label: I18N[state.currentLang].statusOk,
+      reason: I18N[state.currentLang].reasonOk
+    };
+  }
+
+  /**
+   * Evaluate all documents and update 'Generate Package' button & warning message
+   */
+  function validateAndRenderPackageStatus() {
+    if (!state.sortedRequirements || state.sortedRequirements.length === 0) {
+      if (el.generatePackageBtn) el.generatePackageBtn.disabled = true;
+      if (el.generateWarningBox) el.generateWarningBox.style.display = 'none';
+      return;
+    }
+
+    const blockingItems = [];
+
+    state.sortedRequirements.forEach(req => {
+      const status = getDocumentStatus(req);
+      if (status.isBlocking) {
+        blockingItems.push({
+          req: req,
+          status: status
+        });
+      }
+    });
+
+    const texts = I18N[state.currentLang];
+
+    if (blockingItems.length > 0) {
+      // Disable Generate button
+      el.generatePackageBtn.disabled = true;
+      el.generateStatusSummary.textContent = texts.generateDesc;
+
+      // Show warning message explaining why it is blocked
+      el.generateWarningBox.className = 'generate-warning-box';
+      el.generateWarningBox.style.display = 'block';
+
+      let listHtml = `
+        <div style="font-weight: 700; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          ${escapeHtml(texts.generationBlockedHeader)}
+        </div>
+        <ul>
+      `;
+
+      blockingItems.forEach(item => {
+        const orderNum = formatNumber(item.req.order);
+        const docTitle = state.currentLang === 'bn'
+          ? (item.req.title_bn || item.req.title_en)
+          : (item.req.title_en || item.req.title_bn);
+
+        listHtml += `
+          <li>
+            <strong>#${orderNum} ${escapeHtml(docTitle)}</strong> (${item.req.id}):
+            <span style="font-weight: 600; text-decoration: underline;">${escapeHtml(item.status.label)}</span> &mdash;
+            ${escapeHtml(item.status.reason)}
+          </li>
+        `;
+      });
+
+      listHtml += `</ul>`;
+      el.generateWarningBox.innerHTML = listHtml;
+    } else {
+      // No blocking problems: enable Generate button
+      el.generatePackageBtn.disabled = false;
+      el.generateStatusSummary.textContent = texts.generationReadyMsg;
+
+      el.generateWarningBox.className = 'generate-success-box';
+      el.generateWarningBox.style.display = 'flex';
+      el.generateWarningBox.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>${escapeHtml(texts.generationReadyMsg)}</span>
+      `;
+    }
+  }
+
+  /**
    * Handle matching assignment between a requirement and a file
    */
   function handleMatchChange(reqId, selectedFileId) {
     hidePdfAlert();
     const texts = I18N[state.currentLang];
 
-    // If unassigning
     if (!selectedFileId) {
       delete state.documentMatches[reqId];
-      // Clear matchedReqId on previously matched file
       state.uploadedFiles.forEach(f => {
         if (f.matchedReqId === reqId) f.matchedReqId = null;
       });
       renderUploadedFilesList();
       renderRequirementsList();
+      validateAndRenderPackageStatus();
       return;
     }
 
     const selectedFile = state.uploadedFiles.find(f => f.id === selectedFileId);
     if (!selectedFile) return;
 
-    // Check duplicate restriction:
-    // If another file has identical content (same hash) and is matched to a DIFFERENT document, prevent match!
+    // Check duplicate restriction
     const duplicateAssignedToOther = state.uploadedFiles.find(other => 
       other.id !== selectedFile.id &&
       other.hash === selectedFile.hash &&
@@ -681,7 +885,7 @@
       return;
     }
 
-    // Unassign any file previously assigned to this req
+    // Unassign previous file for this req
     state.uploadedFiles.forEach(f => {
       if (f.matchedReqId === reqId) f.matchedReqId = null;
     });
@@ -693,16 +897,26 @@
       }
     }
 
-    // Make match
+    // Assign
     state.documentMatches[reqId] = selectedFileId;
     selectedFile.matchedReqId = reqId;
 
     renderUploadedFilesList();
     renderRequirementsList();
+    validateAndRenderPackageStatus();
   }
 
   /**
-   * Parse and validate the raw JSON data
+   * Handle Expiry Date change
+   */
+  function handleExpiryDateChange(reqId, newDateStr) {
+    state.expiryDates[reqId] = newDateStr;
+    renderRequirementsList();
+    validateAndRenderPackageStatus();
+  }
+
+  /**
+   * Parse and validate raw JSON data
    */
   function processRequirementsData(rawData, filename = 'requirements.json') {
     hideAlert();
@@ -740,6 +954,7 @@
 
     renderSummaryHeader();
     renderRequirementsList();
+    validateAndRenderPackageStatus();
 
     return true;
   }
@@ -796,7 +1011,7 @@
   }
 
   /**
-   * Render the Requirements List with dynamic bilingual document names and file matching UI
+   * Render the Requirements List with Live Status, File Matching, and Expiry Inputs
    */
   function renderRequirementsList() {
     const list = state.sortedRequirements;
@@ -821,14 +1036,17 @@
       return;
     }
 
-    // Render each requirement in strict order
     list.forEach(req => {
       const order = req.order !== undefined ? req.order : '-';
       const docId = req.id || '';
       const matchedFileId = state.documentMatches[docId] || null;
       const matchedFile = state.uploadedFiles.find(f => f.id === matchedFileId);
+      const currentExpiryDate = state.expiryDates[docId] || '';
 
-      // Dynamic Title Switching based on active language toggle
+      // Live status calculation
+      const docStatus = getDocumentStatus(req);
+
+      // Dynamic Title Switching
       let primaryTitle = '';
       let secondaryTitle = '';
 
@@ -845,7 +1063,7 @@
       const mandatoryBadgeClass = isMandatory ? 'badge-mandatory' : 'badge-optional';
       const mandatoryBadgeText = isMandatory ? texts.badgeMandatory : texts.badgeOptional;
 
-      // Expiry badge
+      // Expiry requirement badge
       const hasExpiry = req.has_expiry === true;
       const expiryBadgeClass = hasExpiry ? 'badge-expiry' : 'badge-no-expiry';
       const expiryBadgeText = hasExpiry ? texts.badgeExpiryRequired : texts.badgeNoExpiry;
@@ -860,7 +1078,6 @@
         const isCurrentMatch = fileItem.id === matchedFileId;
         const isAssignedToOther = fileItem.matchedReqId !== null && fileItem.matchedReqId !== docId;
 
-        // Check duplicate rule: if another file has same hash and is matched to a different requirement
         const duplicateAssignedToOther = state.uploadedFiles.find(other =>
           other.id !== fileItem.id &&
           other.hash === fileItem.hash &&
@@ -892,8 +1109,35 @@
         `;
       });
 
+      // Conditional Expiry Date Input:
+      // "If a document has has_expiry = true and a file is matched to it, reveal a date input field for the user to enter the expiry date."
+      let expiryInputHtml = '';
+      if (hasExpiry && matchedFile) {
+        expiryInputHtml = `
+          <div class="expiry-input-group">
+            <label class="expiry-label" for="expiry_${docId}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+              </svg>
+              ${escapeHtml(texts.expiryDateLabel)}:
+            </label>
+            <input
+              type="date"
+              id="expiry_${docId}"
+              class="expiry-date-input"
+              data-req-id="${docId}"
+              value="${escapeHtml(currentExpiryDate)}"
+              aria-label="${escapeHtml(texts.expiryDateLabel)} for ${escapeHtml(primaryTitle)}"
+            >
+          </div>
+        `;
+      }
+
       const itemCard = document.createElement('div');
-      itemCard.className = `req-item ${matchedFile ? 'matched-ok' : ''}`;
+      itemCard.className = `req-item ${docStatus.borderClass}`;
       itemCard.setAttribute('role', 'listitem');
       itemCard.dataset.id = docId;
       itemCard.dataset.order = String(order);
@@ -922,43 +1166,66 @@
               ${expiryIcon}
               ${escapeHtml(expiryBadgeText)}
             </span>
+
+            <!-- LIVE STATUS BADGE -->
+            <span class="status-pill ${docStatus.cssClass}" title="${escapeHtml(docStatus.reason)}">
+              ${escapeHtml(docStatus.label)}
+            </span>
           </div>
         </div>
 
-        <!-- Matching UI Dropdown -->
-        <div class="req-match-container">
-          <span class="match-label">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-            PDF:
-          </span>
-          <div class="match-select-wrapper">
-            <select class="match-dropdown" data-req-id="${docId}" aria-label="Assign PDF file to ${escapeHtml(primaryTitle)}">
-              ${dropdownOptionsHtml}
-            </select>
-            ${matchedFile ? `
-              <button type="button" class="unmatch-btn" data-req-id="${docId}" title="${texts.unmatchTooltip}">
-                &times; ${escapeHtml(texts.unmatchBtnText)}
-              </button>
-            ` : ''}
+        <!-- Controls Row: Matching Dropdown + Expiry Input -->
+        <div class="req-controls-row">
+          <div class="req-match-container">
+            <span class="match-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+              </svg>
+              PDF:
+            </span>
+            <div class="match-select-wrapper">
+              <select class="match-dropdown" data-req-id="${docId}" aria-label="Assign PDF file to ${escapeHtml(primaryTitle)}">
+                ${dropdownOptionsHtml}
+              </select>
+              ${matchedFile ? `
+                <button type="button" class="unmatch-btn" data-req-id="${docId}" title="${texts.unmatchTooltip}">
+                  &times; ${escapeHtml(texts.unmatchBtnText)}
+                </button>
+              ` : ''}
+            </div>
           </div>
+
+          ${expiryInputHtml}
         </div>
       `;
 
-      // Dropdown change handler
+      // Event listener: dropdown change
       const selectEl = itemCard.querySelector('.match-dropdown');
       selectEl.addEventListener('change', (e) => {
         handleMatchChange(docId, e.target.value);
       });
 
-      // Unmatch button handler
+      // Event listener: unmatch button
       const unmatchBtn = itemCard.querySelector('.unmatch-btn');
       if (unmatchBtn) {
         unmatchBtn.addEventListener('click', (e) => {
           e.stopPropagation();
           handleMatchChange(docId, '');
+        });
+      }
+
+      // Event listener: expiry date change
+      const expiryInput = itemCard.querySelector('.expiry-date-input');
+      if (expiryInput) {
+        expiryInput.addEventListener('change', (e) => {
+          handleExpiryDateChange(docId, e.target.value);
+        });
+        expiryInput.addEventListener('input', (e) => {
+          // If 10 characters (YYYY-MM-DD), update live immediately
+          if (e.target.value.length === 10) {
+            handleExpiryDateChange(docId, e.target.value);
+          }
         });
       }
 
@@ -1009,6 +1276,7 @@
     state.tenderData = null;
     state.sortedRequirements = [];
     state.documentMatches = {};
+    state.expiryDates = {};
     state.uploadedFiles.forEach(f => f.matchedReqId = null);
     el.fileInput.value = '';
     el.fileLoadedBadge.style.display = 'none';
@@ -1016,6 +1284,7 @@
     el.emptyState.style.display = 'flex';
     hideAlert();
     renderUploadedFilesList();
+    validateAndRenderPackageStatus();
   }
 
   /**
@@ -1109,7 +1378,7 @@
       const files = e.target.files;
       if (files && files.length > 0) {
         handlePdfFiles(files);
-        el.pdfFileInput.value = ''; // Reset input to allow re-uploading modified files
+        el.pdfFileInput.value = '';
       }
     });
 
@@ -1135,6 +1404,13 @@
       if (files && files.length > 0) {
         handlePdfFiles(files);
       }
+    });
+
+    // Generate Package Button Click
+    el.generatePackageBtn.addEventListener('click', () => {
+      if (el.generatePackageBtn.disabled) return;
+      const texts = I18N[state.currentLang];
+      alert(texts.generationReadyMsg);
     });
 
     // Keyboard navigation for language buttons
